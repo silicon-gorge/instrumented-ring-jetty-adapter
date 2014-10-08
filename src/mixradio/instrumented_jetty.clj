@@ -4,11 +4,14 @@
             [metrics.core :refer [default-registry]]
             [ring.util.servlet :as servlet])
   (:import [ch.qos.logback.access.jetty RequestLogImpl]
-           [com.codahale.metrics.jetty8 InstrumentedSelectChannelConnector
-                                        InstrumentedSslSelectChannelConnector
+           [com.codahale.metrics Timer]
+           [com.codahale.metrics.jetty9 InstrumentedConnectionFactory
                                         InstrumentedQueuedThreadPool
                                         InstrumentedHandler]
-           [org.eclipse.jetty.server Request Server]
+           [org.eclipse.jetty.http HttpVersion]
+           [org.eclipse.jetty.server HttpConfiguration HttpConnectionFactory
+                                     SslConnectionFactory ServerConnector
+                                     Request Server]
            [org.eclipse.jetty.server.handler RequestLogHandler HandlerCollection]
            [org.eclipse.jetty.util.component AbstractLifeCycle LifeCycle]
            [org.eclipse.jetty.util.ssl SslContextFactory]
@@ -28,7 +31,7 @@
 (defn -handle
   [this _ ^Request base-request request response]
   (let [request-map (servlet/build-request-map request)
-        response-map ((.handler this) request-map)]
+        response-map ((.-handler ^mixradio.adapter.RequestHandler this) request-map)]
     (when response-map
       (servlet/update-servlet-response response response-map)
       (.setHandled base-request true))))
@@ -36,7 +39,8 @@
 (defn- instrumented-proxy-handler
   "Returns a Jetty Handler implementation that is instrumented for metrics"
   [handler]
-  (InstrumentedHandler. default-registry (mixradio.adapter.RequestHandler. {:handler handler})))
+  (doto (InstrumentedHandler. default-registry)
+    (.setHandler (mixradio.adapter.RequestHandler. {:handler handler}))))
 
 (def request-log-retain-hours
   (or (when-let [hours (env :requestlog-retainhours)] (Integer/valueOf hours))
@@ -81,25 +85,33 @@
     context))
 
 (defn- ssl-connector
-  "Creates a SslSelectChannelConnector instance."
-  [options]
-  (doto (InstrumentedSslSelectChannelConnector.
-         default-registry
-         (options :ssl-port 443)
-         (ssl-context-factory options)
-         (com.codahale.metrics.Clock/defaultClock))
-    (.setHost (options :host))))
+  "Creates a SSL server connector instance."
+  [server options]
+  (let [ssl-connection-factory (SslConnectionFactory. (ssl-context-factory options)
+                                                      (.toString HttpVersion/HTTP_1_1))
+        instr-conn-factory (InstrumentedConnectionFactory. ssl-connection-factory (Timer.))]
+    (doto (ServerConnector. server (into-array [instr-conn-factory]))
+      (.setPort (options :ssl-port 443))
+      (.setHost (options :host)))))
+
+(defn- std-connector
+  "Creates a standard server connector instance."
+  [server options]
+  (let [config (doto (HttpConfiguration. )
+                 (.setSendDateHeader true))
+        connection-factory (HttpConnectionFactory. config)
+        instr-conn-factory (InstrumentedConnectionFactory. connection-factory (Timer.))]
+    (doto (ServerConnector. server (into-array [instr-conn-factory]))
+      (.setPort (options :port 80))
+      (.setHost (options :host)))))
 
 (defn- create-server
   "Construct a Jetty Server instance."
-  [options]
-  (let [connector (doto (InstrumentedSelectChannelConnector. default-registry (options :port 80) (com.codahale.metrics.Clock/defaultClock))
-                    (.setHost (options :host)))
-        server    (doto (Server.)
-                    (.addConnector connector)
-                    (.setSendDateHeader true))]
+  [thread-pool options]
+  (let [server (Server. thread-pool)]
+    (.addConnector server (std-connector server options))
     (when (or (options :ssl?) (options :ssl-port))
-      (.addConnector server (ssl-connector options)))
+      (.addConnector server (ssl-connector server options)))
     server))
 
 (defn- life-cycle
@@ -129,13 +141,12 @@
                   :want or :none (defaults to :none)
   :on-stop      - A function to call on shutdown, before closing connectors"
   [handler options]
-  (let [^Server s (create-server (dissoc options :configurator))
-        ^QueuedThreadPool p (InstrumentedQueuedThreadPool. default-registry)]
-    (doto p
-      (.setMaxThreads (options :max-threads 254)))
+  (let [
+        ^QueuedThreadPool p (InstrumentedQueuedThreadPool. default-registry
+                                                           (options :max-threads 254))
+        ^Server s (create-server p (dissoc options :configurator))]
     (doto s
-      (.setHandler (handlers handler))
-      (.setThreadPool p))
+      (.setHandler (handlers handler)))
     (when-let [configurator (:configurator options)]
       (configurator s))
     (when (:on-stop options)
