@@ -2,6 +2,7 @@
   "Adapter for the Jetty webserver."
   (:require [environ.core :refer [env]]
             [metrics.core :refer [default-registry]]
+            [metrics.timers :refer [timer]]
             [ring.util.servlet :as servlet])
   (:import [ch.qos.logback.access.jetty RequestLogImpl]
            [com.codahale.metrics Timer]
@@ -84,12 +85,20 @@
       nil)
     context))
 
+(defn- connection-timer
+  "Creates a timer to record time taken to obtain connections from a connection factory"
+  [name]
+  (timer default-registry ["org"
+                           "eclipse"
+                           (format "jetty.server.%sConnectionFactory.new-connections" name)]))
+
 (defn- ssl-connector
   "Creates a SSL server connector instance."
   [server options]
   (let [ssl-connection-factory (SslConnectionFactory. (ssl-context-factory options)
                                                       (.toString HttpVersion/HTTP_1_1))
-        instr-conn-factory (InstrumentedConnectionFactory. ssl-connection-factory (Timer.))]
+        instr-conn-factory (InstrumentedConnectionFactory. ssl-connection-factory
+                                                           (connection-timer "Ssl"))]
     (doto (ServerConnector. server (into-array [instr-conn-factory]))
       (.setPort (options :ssl-port 443))
       (.setHost (options :host)))))
@@ -100,7 +109,8 @@
   (let [config (doto (HttpConfiguration. )
                  (.setSendDateHeader true))
         connection-factory (HttpConnectionFactory. config)
-        instr-conn-factory (InstrumentedConnectionFactory. connection-factory (Timer.))]
+        instr-conn-factory (InstrumentedConnectionFactory. connection-factory
+                                                           (connection-timer "Http"))]
     (doto (ServerConnector. server (into-array [instr-conn-factory]))
       (.setPort (options :port 80))
       (.setHost (options :host)))))
