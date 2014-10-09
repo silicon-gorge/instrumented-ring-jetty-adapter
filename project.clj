@@ -15,4 +15,5 @@
 
   :aot [mixradio.instrumented-jetty]
 
-  :profiles {:provided {:dependencies [[org.clojure/clojure "1.6.0"]]}})
+  :profiles {:provided {:dependencies [[org.clojure/clojure "1.6.0"]
+                                       [org.slf4j/slf4j-nop "1.7.7"]]}})
