@@ -92,6 +92,12 @@
                            "eclipse"
                            (format "jetty.server.%sConnectionFactory.new-connections" name)]))
 
+(defn- http-config
+  [options]
+  (doto (HttpConfiguration.)
+    (.setSendDateHeader true)
+    (.setSendServerVersion (options :send-server-version false))))
+
 (defn- ssl-connector
   "Creates a SSL server connector instance."
   [server options]
@@ -106,9 +112,7 @@
 (defn- std-connector
   "Creates a standard server connector instance."
   [server options]
-  (let [config (doto (HttpConfiguration. )
-                 (.setSendDateHeader true))
-        connection-factory (HttpConnectionFactory. config)
+  (let [connection-factory (HttpConnectionFactory. (http-config options))
         instr-conn-factory (InstrumentedConnectionFactory. connection-factory
                                                            (connection-timer "Http"))]
     (doto (ServerConnector. server (into-array [instr-conn-factory]))
@@ -136,20 +140,22 @@
   "Start a Jetty webserver to serve the given handler according to the
   supplied options:
 
-  :configurator - a function called with the Jetty Server instance
-  :port         - the port to listen on (defaults to 80)
-  :host         - the hostname to listen on
-  :join?        - blocks the thread until server ends (defaults to true)
-  :ssl?         - allow connections over HTTPS
-  :ssl-port     - the SSL port to listen on (defaults to 443, implies :ssl?)
-  :keystore     - the keystore to use for SSL connections
-  :key-password - the password to the keystore
-  :truststore   - a truststore to use for SSL connections
-  :trust-password - the password to the truststore
-  :max-threads  - the maximum number of threads to use (default 50)
-  :client-auth  - SSL client certificate authenticate, may be set to :need,
-                  :want or :none (defaults to :none)
-  :on-stop      - A function to call on shutdown, before closing connectors"
+  :configurator        - a function called with the Jetty Server instance
+  :port                - the port to listen on (defaults to 80)
+  :host                - the hostname to listen on
+  :join?               - blocks the thread until server ends (defaults to true)
+  :ssl?                - allow connections over HTTPS
+  :ssl-port            - the SSL port to listen on (defaults to 443, implies :ssl?)
+  :keystore            - the keystore to use for SSL connections
+  :key-password        - the password to the keystore
+  :truststore          - a truststore to use for SSL connections
+  :trust-password      - the password to the truststore
+  :max-threads         - the maximum number of threads to use (default 50)
+  :client-auth         - SSL client certificate authenticate, may be set to :need,
+                         :want or :none (defaults to :none)
+  :on-stop             - A function to call on shutdown, before closing connectors
+  :send-server-version - if true, the server version is sent in responses
+                         (defaults to false)"
   [handler options]
   (let [
         ^QueuedThreadPool p (InstrumentedQueuedThreadPool. default-registry
