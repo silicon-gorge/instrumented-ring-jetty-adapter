@@ -25,6 +25,14 @@
  :state handler
  :name mixradio.adapter.RequestHandler)
 
+(def ^:dynamic request-log-enabled?
+  (Boolean/valueOf (env :requestlog-enabled "false")))
+
+(def ^:dynamic request-log-retain-hours
+  (or (when-let [hours (env :requestlog-retainhours)] (Integer/valueOf hours))
+      (when-let [days (env :requestlog-retaindays)] (* 24 (Integer/valueOf days)))
+      72))
+
 (defn -init
   [col]
   [[] (:handler col)])
@@ -43,18 +51,12 @@
   (doto (InstrumentedHandler. default-registry)
     (.setHandler (mixradio.adapter.RequestHandler. {:handler handler}))))
 
-(def request-log-retain-hours
-  (or (when-let [hours (env :requestlog-retainhours)] (Integer/valueOf hours))
-      (when-let [days (env :requestlog-retaindays)] (* 24 (Integer/valueOf days)))
-      72))
-
 (defn- request-log-handler
   "A Jetty Handler that writes requests to a log file"
   []
   (System/setProperty "REQUESTLOG_RETAINHOURS" (str request-log-retain-hours))
-  (let [request-log
-        (doto (RequestLogImpl.)
-          (.setResource "/logback-access.xml"))]
+  (let [request-log (doto (RequestLogImpl.)
+                      (.setResource "/logback-access.xml"))]
     (doto (RequestLogHandler.)
       (.setRequestLog request-log))))
 
@@ -63,7 +65,7 @@
   [handler]
   (let [handler-col (HandlerCollection.)]
     (.addHandler handler-col (instrumented-proxy-handler handler))
-    (when (Boolean/valueOf (env :requestlog-enabled))
+    (when request-log-enabled?
       (.addHandler handler-col (request-log-handler)))
     handler-col))
 
