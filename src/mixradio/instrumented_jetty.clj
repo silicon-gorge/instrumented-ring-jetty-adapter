@@ -2,13 +2,17 @@
   "Adapter for the Jetty webserver."
   (:require [environ.core :refer [env]]
             [metrics.core :refer [default-registry]]
+            [metrics.timers :refer [timer]]
             [ring.util.servlet :as servlet])
   (:import [ch.qos.logback.access.jetty RequestLogImpl]
-           [com.codahale.metrics.jetty8 InstrumentedSelectChannelConnector
-                                        InstrumentedSslSelectChannelConnector
+           [com.codahale.metrics Timer]
+           [com.codahale.metrics.jetty9 InstrumentedConnectionFactory
                                         InstrumentedQueuedThreadPool
                                         InstrumentedHandler]
-           [org.eclipse.jetty.server Request Server]
+           [org.eclipse.jetty.http HttpVersion]
+           [org.eclipse.jetty.server HttpConfiguration HttpConnectionFactory
+                                     SslConnectionFactory ServerConnector
+                                     Request Server]
            [org.eclipse.jetty.server.handler RequestLogHandler HandlerCollection]
            [org.eclipse.jetty.util.component AbstractLifeCycle LifeCycle]
            [org.eclipse.jetty.util.ssl SslContextFactory]
@@ -36,7 +40,7 @@
 (defn -handle
   [this _ ^Request base-request request response]
   (let [request-map (servlet/build-request-map request)
-        response-map ((.handler this) request-map)]
+        response-map ((.-handler ^mixradio.adapter.RequestHandler this) request-map)]
     (when response-map
       (servlet/update-servlet-response response response-map)
       (.setHandled base-request true))))
@@ -44,7 +48,8 @@
 (defn- instrumented-proxy-handler
   "Returns a Jetty Handler implementation that is instrumented for metrics"
   [handler]
-  (InstrumentedHandler. default-registry (mixradio.adapter.RequestHandler. {:handler handler})))
+  (doto (InstrumentedHandler. default-registry)
+    (.setHandler (mixradio.adapter.RequestHandler. {:handler handler}))))
 
 (defn- request-log-handler
   "A Jetty Handler that writes requests to a log file"
@@ -82,26 +87,47 @@
       nil)
     context))
 
-(defn- ssl-connector
-  "Creates a SslSelectChannelConnector instance."
+(defn- connection-timer
+  "Creates a timer to record time taken to obtain connections from a connection factory"
+  [name]
+  (timer default-registry ["org"
+                           "eclipse"
+                           (format "jetty.server.%sConnectionFactory.new-connections" name)]))
+
+(defn- http-config
   [options]
-  (doto (InstrumentedSslSelectChannelConnector.
-         default-registry
-         (options :ssl-port 443)
-         (ssl-context-factory options)
-         (com.codahale.metrics.Clock/defaultClock))
-    (.setHost (options :host))))
+  (doto (HttpConfiguration.)
+    (.setSendDateHeader true)
+    (.setSendServerVersion (options :send-server-version false))))
+
+(defn- ssl-connector
+  "Creates a SSL server connector instance."
+  [server options]
+  (let [ssl-connection-factory (SslConnectionFactory. (ssl-context-factory options)
+                                                      (.toString HttpVersion/HTTP_1_1))
+        instr-conn-factory (InstrumentedConnectionFactory. ssl-connection-factory
+                                                           (connection-timer "Ssl"))]
+    (doto (ServerConnector. server (into-array [instr-conn-factory]))
+      (.setPort (options :ssl-port 443))
+      (.setHost (options :host)))))
+
+(defn- std-connector
+  "Creates a standard server connector instance."
+  [server options]
+  (let [connection-factory (HttpConnectionFactory. (http-config options))
+        instr-conn-factory (InstrumentedConnectionFactory. connection-factory
+                                                           (connection-timer "Http"))]
+    (doto (ServerConnector. server (into-array [instr-conn-factory]))
+      (.setPort (options :port 80))
+      (.setHost (options :host)))))
 
 (defn- create-server
   "Construct a Jetty Server instance."
-  [options]
-  (let [connector (doto (InstrumentedSelectChannelConnector. default-registry (options :port 80) (com.codahale.metrics.Clock/defaultClock))
-                    (.setHost (options :host)))
-        server    (doto (Server.)
-                    (.addConnector connector)
-                    (.setSendDateHeader true))]
+  [thread-pool options]
+  (let [server (Server. thread-pool)]
+    (.addConnector server (std-connector server options))
     (when (or (options :ssl?) (options :ssl-port))
-      (.addConnector server (ssl-connector options)))
+      (.addConnector server (ssl-connector server options)))
     server))
 
 (defn- life-cycle
@@ -116,28 +142,29 @@
   "Start a Jetty webserver to serve the given handler according to the
   supplied options:
 
-  :configurator - a function called with the Jetty Server instance
-  :port         - the port to listen on (defaults to 80)
-  :host         - the hostname to listen on
-  :join?        - blocks the thread until server ends (defaults to true)
-  :ssl?         - allow connections over HTTPS
-  :ssl-port     - the SSL port to listen on (defaults to 443, implies :ssl?)
-  :keystore     - the keystore to use for SSL connections
-  :key-password - the password to the keystore
-  :truststore   - a truststore to use for SSL connections
-  :trust-password - the password to the truststore
-  :max-threads  - the maximum number of threads to use (default 50)
-  :client-auth  - SSL client certificate authenticate, may be set to :need,
-                  :want or :none (defaults to :none)
-  :on-stop      - A function to call on shutdown, before closing connectors"
+  :configurator        - a function called with the Jetty Server instance
+  :port                - the port to listen on (defaults to 80)
+  :host                - the hostname to listen on
+  :join?               - blocks the thread until server ends (defaults to true)
+  :ssl?                - allow connections over HTTPS
+  :ssl-port            - the SSL port to listen on (defaults to 443, implies :ssl?)
+  :keystore            - the keystore to use for SSL connections
+  :key-password        - the password to the keystore
+  :truststore          - a truststore to use for SSL connections
+  :trust-password      - the password to the truststore
+  :max-threads         - the maximum number of threads to use (default 50)
+  :client-auth         - SSL client certificate authenticate, may be set to :need,
+                         :want or :none (defaults to :none)
+  :on-stop             - A function to call on shutdown, before closing connectors
+  :send-server-version - if true, the server version is sent in responses
+                         (defaults to false)"
   [handler options]
-  (let [^Server s (create-server (dissoc options :configurator))
-        ^QueuedThreadPool p (InstrumentedQueuedThreadPool. default-registry)]
-    (doto p
-      (.setMaxThreads (options :max-threads 254)))
+  (let [
+        ^QueuedThreadPool p (InstrumentedQueuedThreadPool. default-registry
+                                                           (options :max-threads 254))
+        ^Server s (create-server p (dissoc options :configurator))]
     (doto s
-      (.setHandler (handlers handler))
-      (.setThreadPool p))
+      (.setHandler (handlers handler)))
     (when-let [configurator (:configurator options)]
       (configurator s))
     (when (:on-stop options)
