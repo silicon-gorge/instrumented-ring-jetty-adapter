@@ -1,4 +1,4 @@
-(defproject mixradio/instrumented-ring-jetty-adapter "1.0.3"
+(defproject mixradio/instrumented-ring-jetty-adapter "1.0.4-SNAPSHOT"
 
   :description "Instrumented Jetty"
   :url "https://github.com/mixradio/instrumented-ring-jetty-adapter"
