@@ -10,13 +10,19 @@
                                         InstrumentedQueuedThreadPool
                                         InstrumentedHandler]
            [org.eclipse.jetty.http HttpVersion]
-           [org.eclipse.jetty.server HttpConfiguration HttpConnectionFactory
-                                     SslConnectionFactory ServerConnector
-                                     Request Server]
+           [org.eclipse.jetty.server HttpConfiguration ConnectionFactory
+                                     HttpConnectionFactory SslConnectionFactory
+                                     ServerConnector Request
+                                     Server SecureRequestCustomizer]
            [org.eclipse.jetty.server.handler RequestLogHandler HandlerCollection]
            [org.eclipse.jetty.util.component AbstractLifeCycle LifeCycle]
            [org.eclipse.jetty.util.ssl SslContextFactory]
            [org.eclipse.jetty.util.thread QueuedThreadPool ShutdownThread]))
+
+(def common-rsa-ssl-protocols ["TLS_DHE_RSA_WITH_AES_128_CBC_SHA"
+                               "SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA"
+                               "TLS_RSA_WITH_AES_128_CBC_SHA"
+                               "SSL_RSA_WITH_3DES_EDE_CBC_SHA"])
 
 (gen-class
  :extends org.eclipse.jetty.server.handler.AbstractHandler
@@ -77,10 +83,16 @@
       (.setKeyStorePath context (options :keystore))
       (.setKeyStore context (options :keystore)))
     (.setKeyStorePassword context (options :key-password))
+    (when (options :key-mgr-password)
+      (.setKeyManagerPassword context (options :key-mgr-password)))
     (when (options :truststore)
-      (.setTrustStore context (options :truststore)))
+      (if (string? (options :truststore))
+        (.setTrustStorePath context (options :truststore))
+        (.setTrustStore context (options :truststore))))
     (when (options :trust-password)
-      (.setTrustPassword context (options :trust-password)))
+      (.setTrustStorePassword context (options :trust-password)))
+    (.setIncludeCipherSuites context (into-array String (options :cipher-suites
+                                                                 common-rsa-ssl-protocols)))
     (case (options :client-auth)
       :need (.setNeedClientAuth context true)
       :want (.setWantClientAuth context true)
@@ -106,8 +118,11 @@
   (let [ssl-connection-factory (SslConnectionFactory. (ssl-context-factory options)
                                                       (.toString HttpVersion/HTTP_1_1))
         instr-conn-factory (InstrumentedConnectionFactory. ssl-connection-factory
-                                                           (connection-timer "Ssl"))]
-    (doto (ServerConnector. server (into-array [instr-conn-factory]))
+                                                           (connection-timer "Ssl"))
+        https-config (doto (HttpConfiguration.)
+                       (.addCustomizer (SecureRequestCustomizer.)))
+        http-conn-factory (HttpConnectionFactory. https-config)]
+    (doto (ServerConnector. server (into-array ConnectionFactory [instr-conn-factory http-conn-factory]))
       (.setPort (options :ssl-port 443))
       (.setHost (options :host)))))
 
@@ -143,15 +158,22 @@
   supplied options:
 
   :configurator        - a function called with the Jetty Server instance
-  :port                - the port to listen on (defaults to 80)
+  :port                - the port to listen on (defaults to 80, note using a port
+                         below 1024 requires running as root)
   :host                - the hostname to listen on
   :join?               - blocks the thread until server ends (defaults to true)
   :ssl?                - allow connections over HTTPS
-  :ssl-port            - the SSL port to listen on (defaults to 443, implies :ssl?)
-  :keystore            - the keystore to use for SSL connections
+  :ssl-port            - the SSL port to listen on (defaults to 443, implies :ssl?,
+                         note using a port below 1024 requires running as root)
+  :keystore            - path to the keystore to use for SSL connections, or an actual
+                         keystore instance
   :key-password        - the password to the keystore
-  :truststore          - a truststore to use for SSL connections
+  :key-mgr-password    - the password for the key manager
+  :truststore          - path to the truststore to use for SSL connections, or an actual
+                         truststore instance
   :trust-password      - the password to the truststore
+  :cipher-suites       - a list of cipher suites to use for SSL (instead of some default
+                         values for RSA-based SSL)
   :max-threads         - the maximum number of threads to use (default 50)
   :client-auth         - SSL client certificate authenticate, may be set to :need,
                          :want or :none (defaults to :none)
