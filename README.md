@@ -4,9 +4,13 @@ Wraps Ring Jetty with instrumentation that collects metrics that can be sent to 
 
 ##Usage
 
-In project file:
+In your project file:
 
+```clj
 [mixradio/instrumented-ring-jetty-adapter "1.0.4"]
+```
+
+[![Clojars Project](http://clojars.org/mixradio/instrumented-ring-jetty-adapter/latest-version.svg)](http://clojars.org/mixradio/instrumented-ring-jetty-adapter)
 
 Set the following environment variables if request logging to a web log file is required:
 
@@ -16,9 +20,8 @@ Set the following environment variables if request logging to a web log file is 
 
 In the code that starts the service use something like this:
 
-<pre><code>(:require [mixradio.instrumented-jetty :refer [run-jetty]])
-
-...
+```clj
+(:require [mixradio.instrumented-jetty :refer [run-jetty]])
 
 (run-jetty {your ring handler} {:port {your service port}
                                 :max-threads {number of threads to use}
@@ -26,7 +29,7 @@ In the code that starts the service use something like this:
                                 :auto-reload? false
                                 :configurator {your function for extra server configuration commands}
                                 :send-server-version false})
-</code></pre>
+```
 
 For a definition of the options available see the documentation of `run-jetty` in the [the code](https://github.com/mixradio/instrumented-ring-jetty-adapter/blob/master/src/mixradio/instrumented_jetty.clj).
 
