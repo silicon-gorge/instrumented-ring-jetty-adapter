@@ -49,7 +49,7 @@ so don't use these in a production system!
 2. Add the following entries to the properties defined when calling run-jetty in the start-server
    function in the `setup.clji` file of your new service:
 
-<pre><code> :ssl-port 8443
+<pre><code>:ssl-port 8443
 :keystore "path-to-keystore-file"
 :key-password "OBF:1vny1zlo1x8e1vnw1vn61x8g1zlu1vn4"
 :key-mgr-password "OBF:1u2u1wml1z7s1z7a1wnl1u2g"
