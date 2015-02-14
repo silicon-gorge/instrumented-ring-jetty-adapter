@@ -14,9 +14,9 @@ In your project file:
 
 Set the following environment variables if request logging to a web log file is required:
 
-- `request-log-enabled` - set to true if you want web requests to be collected.
-- `request-log-retainhours` - how long to retain request log info (hours component).
-- `request-log-retaindays` - how long to retain request log info (days component).
+- `REQUESTLOG_ENABLED` - set to true if you want web requests to be collected.
+- `REQUESTLOG_RETAINHOURS` - how long to retain request log info (hours component).
+- `REQUESTLOG_RETAINDAYS` - how long to retain request log info (days component).
 
 In the code that starts the service use something like this:
 
