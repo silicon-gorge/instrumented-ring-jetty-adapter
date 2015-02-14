@@ -12,11 +12,11 @@ In your project file:
 
 [![Clojars Project](http://clojars.org/mixradio/instrumented-ring-jetty-adapter/latest-version.svg)](http://clojars.org/mixradio/instrumented-ring-jetty-adapter)
 
-Set the following environment variables if request logging to a web log file is required:
+Set the following environment variables if request logging to a file is required:
 
 - `REQUESTLOG_ENABLED` - set to true if you want web requests to be collected.
-- `REQUESTLOG_RETAINHOURS` - how long to retain request log info (hours component).
-- `REQUESTLOG_RETAINDAYS` - how long to retain request log info (days component).
+- `REQUESTLOG_RETAINHOURS` - how long to retain request log info in hours.
+- `REQUESTLOG_RETAINDAYS` - how long to retain request log info in days (if `REQUESTLOG_RETAINHOURS` has been specified it will be used in preference to this value).
 
 In the code that starts the service use something like this:
 
