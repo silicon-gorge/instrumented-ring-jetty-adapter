@@ -6,7 +6,7 @@
             <maxHistory>${REQUESTLOG_RETAINHOURS:-72}</maxHistory>
         </rollingPolicy>
         <encoder>
-            <pattern>%i{X-Forwarded-For} %h %l %u [%t] "%r" %s %b "%i{Referer}" "%i{User-Agent}" %D</pattern>
+            <pattern>"%i{X-Forwarded-For}" %h %l %u [%t] "%r" %s %b "%i{Referer}" "%i{User-Agent}" %D</pattern>
         </encoder>
     </appender>
     <appender-ref ref="file" />
