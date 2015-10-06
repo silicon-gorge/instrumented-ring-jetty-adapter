@@ -6,10 +6,6 @@ Wraps Ring Jetty with instrumentation that collects metrics that can be sent to 
 
 In your project file:
 
-```clj
-[mixradio/instrumented-ring-jetty-adapter "1.0.4"]
-```
-
 [![Clojars Project](http://clojars.org/mixradio/instrumented-ring-jetty-adapter/latest-version.svg)](http://clojars.org/mixradio/instrumented-ring-jetty-adapter)
 
 Set the following environment variables if request logging to a file is required:
