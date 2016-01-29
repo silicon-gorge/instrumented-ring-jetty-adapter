@@ -6,12 +6,11 @@
 
   :dependencies [[ch.qos.logback/logback-access "1.1.3"]
                  [environ "1.0.0"]
-                 [io.dropwizard.metrics/metrics-jetty9 "3.1.1"]
-                 [metrics-clojure "2.5.1"]
-                 [org.eclipse.jetty/jetty-server "9.2.9.v20150224"]
-                 [ring/ring-core "1.3.2"]
-                 [ring/ring-jetty-adapter "1.3.2" :exclusions [org.eclipse.jetty/jetty-server]]
-                 [ring/ring-servlet "1.3.2"]]
+                 [io.dropwizard.metrics/metrics-jetty9 "3.1.2"]
+                 [metrics-clojure "2.6.1"]
+                 [ring/ring-core "1.4.0"]
+                 [ring/ring-jetty-adapter "1.4.0"]
+                 [ring/ring-servlet "1.4.0"]]
 
   :aot [mixradio.instrumented-jetty]
 
